@@ -18,32 +18,27 @@
 package config
 
 import (
-	"github.com/creasty/defaults"
-)
-
-import (
+	"dubbo.apache.org/dubbo-go/v3/cluster/router/chain"
 	_ "dubbo.apache.org/dubbo-go/v3/cluster/router/chain"
 	"dubbo.apache.org/dubbo-go/v3/common/constant"
+	"fmt"
+	"github.com/creasty/defaults"
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/parsers/toml"
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/pkg/errors"
 )
 
 // RouterConfig is the configuration of the router.
 type RouterConfig struct {
-	// Scope must be chosen from `service` and `application`.
-	Scope string `validate:"required" yaml:"scope" json:"scope,omitempty" property:"scope"`
-	// Key specifies which service or application the rule body acts on.
-	Key        string   `validate:"required" yaml:"key" json:"key,omitempty" property:"key"`
-	Force      bool     `default:"false" yaml:"force" json:"force,omitempty" property:"force"`
-	Runtime    bool     `default:"false" yaml:"runtime" json:"runtime,omitempty" property:"runtime"`
-	Enable     bool     `default:"true" yaml:"enable" json:"enable,omitempty" property:"enable"`
-	Valid      bool     `default:"true" yaml:"valid" json:"valid,omitempty" property:"valid"`
-	Priority   int      `default:"0" yaml:"priority" json:"priority,omitempty" property:"priority"`
-	Conditions []string `yaml:"conditions" json:"conditions,omitempty" property:"conditions"`
-	Tags       []Tag    `yaml:"tags" json:"tags,omitempty" property:"tags"`
+	VirtualService  Property `yaml:"virtual_service" json:"virtual_service,omitempty" property:"virtual_service"`
+	DestinationRule Property `yaml:"destination_rule" json:"destination_rule,omitempty" property:"destination_rule"`
 }
 
-type Tag struct {
-	Name      string   `yaml:"name" json:"name,omitempty" property:"name"`
-	Addresses []string `yaml:"addresses" json:"addresses,omitempty" property:"addresses"`
+type Property struct {
+	Path  string `yaml:"path" json:"path,omitempty" property:"path"`
+	Genre string `default:"yaml" yaml:"genre" json:"genre,omitempty" property:"genre"`
+	Delim string `default:"." yaml:"delim" json:"delim,omitempty" property:"delim"`
 }
 
 // Prefix dubbo.router
@@ -51,26 +46,53 @@ func (RouterConfig) Prefix() string {
 	return constant.RouterConfigPrefix
 }
 
-func (c *RouterConfig) check() error {
-	if err := defaults.Set(c); err != nil {
+func (rc *RouterConfig) check() error {
+	if err := defaults.Set(rc); err != nil {
 		return err
 	}
-	return verify(c)
+	return nil
 }
 
 func initRouterConfig(rc *RootConfig) error {
-	routers := rc.Router
-	if len(routers) > 0 {
-		for _, r := range routers {
-			if err := r.check(); err != nil {
-				return err
-			}
+	router := rc.Router
+	if router != nil {
+		var err error
+		if err = router.check(); err != nil {
+			return err
 		}
-		rc.Router = routers
-	}
 
-	//chain.SetVSAndDRConfigByte(vsBytes, drBytes)
+		var vsBytes, drBytes []byte
+		vsBytes, err = getConfigBytes(router.VirtualService)
+		if err != nil {
+			return err
+		}
+		drBytes, err = getConfigBytes(router.DestinationRule)
+		if err != nil {
+			return err
+		}
+		chain.SetVSAndDRConfigByte(vsBytes, drBytes)
+	}
 	return nil
+}
+
+func getConfigBytes(p Property) ([]byte, error) {
+	var (
+		b   []byte
+		err error
+	)
+	lc := NewLoaderConf(WithPath(p.Path), WithGenre(p.Genre), WithDelim(p.Delim))
+	k := getKoanf(lc)
+	switch p.Genre {
+	case "yaml", "yml":
+		b, err = k.Marshal(yaml.Parser())
+	case "json":
+		b, err = k.Marshal(json.Parser())
+	case "toml":
+		b, err = k.Marshal(toml.Parser())
+	default:
+		err = errors.New(fmt.Sprintf("Unsupported %s file type", p.Genre))
+	}
+	return b, err
 }
 
 //// LocalRouterRules defines the local router config structure

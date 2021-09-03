@@ -62,7 +62,7 @@ type RootConfig struct {
 	// Deprecated
 	Network map[interface{}]interface{} `yaml:"network" json:"network,omitempty" property:"network"`
 
-	Router []*RouterConfig `yaml:"router" json:"router,omitempty" property:"router"`
+	Router *RouterConfig `yaml:"router" json:"router,omitempty" property:"router"`
 	// is refresh action
 	refresh bool
 	// prefix              string
